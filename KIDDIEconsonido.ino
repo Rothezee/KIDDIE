@@ -1,122 +1,176 @@
-//vercion funcionando marzo 2023, instalada en calesita
-//PIN 50 /MISO, PIN 51 /MOSI, PIN 52 /SCK, PIN 53 /CS
-//PIN 11 SALIDA DE AUDIO, PIN 22 Y 24 SELECCION AUDIO,
+// Adaptación del código original para Arduino MEGA + TFT 2.8" con SD integrada
+// Mantiene los botones físicos y añade display para mostrar créditos, tiempo y estado
 
-#include <SD.h>
 #include <SPI.h>
+#include <SD.h>
 #include <TMRpcm.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_TFTLCD.h>
+
+// Pines TFT 2.8" ILI9341 shield (Arduino MEGA)
+#define LCD_CS    A3
+#define LCD_CD    A2
+#define LCD_WR    A1
+#define LCD_RD    A0
+#define LCD_RESET A4
+
+// Lector SD integrado en shield
+#define SD_CS     53
 
 TMRpcm Audio;
-#define pinSD 53
-#define USE_TIMER2
+Adafruit_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 
-int ENTRADA1 = 22;  //estos pines para seleccion de audio en este eskech no se estan usando
-int ENTRADA2 = 24;  // junio 2025, actualmente no se estan usando era una funcion para cambiar la musica mientras jugaba
-int valor = 0;
+// Pines originales
+int COIN       = 8;    // Entrada coin
+int BOTON      = 4;    // Botón físico
+int SW1        = 5;    // DIP switch tiempo bit 1
+int SW2        = 6;    // DIP switch tiempo bit 2
+int SMOTOR     = 10;   // Salida motor
+int SBOTON     = 28;   // Salida activada por botón
 
+int LUZ1       = 22;   // Salidas luces
+int LUZ2       = 24;
+int LUZ3       = 26;
 
-int A = 0;
-boolean B = 0;
-boolean C = 0;
-
+// Variables de control
 unsigned int CONTADORCOIN = 0;
-unsigned long CONT = 0;
-int BOTON = 4;    //entrada boton
-int SW1 = 5;      //entrada dip swich seleccionar tiempo
-int SW2 = 6;      // entrada dip swich seleccionar tiempo
-int COIN = 8;     //entrada coin
-int SMOTOR = 10;  //salida motor
-int SBOTON = 28;  //salida activada por boton para usar luz o bocina
+unsigned long CONT        = 0;
+unsigned int TIEMPO       = 0;
+const int CREDIT          = 1;
+int LA                   = 0;
 
-int LA = 0;     //variable axiliar luces
-int LUZ1 = 22;  //salidas luces
-int LUZ2 = 24;
-int LUZ3 = 26;
-
-unsigned int TIEMPO = 0;  //esta variable se usa para asignar el tiempo segun los dip swich
-
-int CREDIT = 0;  //variable para asignar creditos para jugar
+// Posiciones de texto en pantalla
+const int X_CREDITOS = 10;
+const int Y_CREDITOS = 20;
+const int X_ESTADO   = 10;
+const int Y_ESTADO   = 50;
+const int X_TIEMPO   = 10;
+const int Y_TIEMPO   = 80;
 
 void setup() {
   Serial.begin(9600);
 
+  // Inicializar audio
+  Audio.speakerPin = 11; // Pin de salida audio
+
+  // Pines IO
   pinMode(COIN, INPUT_PULLUP);
-  pinMode(SMOTOR, OUTPUT);
-  pinMode(LUZ1, OUTPUT);
-  pinMode(LUZ2, OUTPUT);
-  pinMode(LUZ3, OUTPUT);
   pinMode(BOTON, INPUT_PULLUP);
+  pinMode(SMOTOR, OUTPUT);
   pinMode(SBOTON, OUTPUT);
   pinMode(SW1, INPUT_PULLUP);
   pinMode(SW2, INPUT_PULLUP);
+  pinMode(LUZ1, OUTPUT);
+  pinMode(LUZ2, OUTPUT);
+  pinMode(LUZ3, OUTPUT);
 
-  pinMode(ENTRADA1, INPUT_PULLUP);
-  pinMode(ENTRADA2, INPUT_PULLUP);
-  Audio.speakerPin = 11;
-  Serial.begin(9600);
+  // Inicializar TFT
+  tft.reset();
+  uint16_t id = tft.readID();
+  tft.begin(id);
+  tft.setRotation(1);
+  tft.fillScreen(0x0000); // Negro
+  tft.setTextSize(2);
+  tft.setTextColor(0xFFFF); // Blanco
 
-  if (!SD.begin(pinSD)) {
-    Serial.println("falla en sd");
-    return;
+  // Saludo inicial
+  tft.setCursor(X_CREDITOS, Y_CREDITOS);
+  tft.println("Calesita v2025");
+
+  // Inicializar SD
+  if (!SD.begin(SD_CS)) {
+    tft.setCursor(X_ESTADO, Y_ESTADO);
+    tft.setTextColor(0xF800); // Rojo
+    tft.println("Error lector SD");
+    Serial.println("Falla en SD");
+  } else {
+    tft.setCursor(X_ESTADO, Y_ESTADO);
+    tft.setTextColor(0x07E0); // Verde
+    tft.println("SD OK");
   }
 
-  CREDIT = 1;
+  // Configurar tiempo según DIP switches
+  if (digitalRead(SW1) == HIGH && digitalRead(SW2) == HIGH) TIEMPO =  83000;
+  if (digitalRead(SW1) == HIGH && digitalRead(SW2) == LOW)  TIEMPO = 105000;
+  if (digitalRead(SW1) == LOW  && digitalRead(SW2) == HIGH) TIEMPO = 135000;
+  if (digitalRead(SW1) == LOW  && digitalRead(SW2) == LOW)  TIEMPO = 165000;
 
-  if (digitalRead(SW1) == HIGH && digitalRead(SW2) == HIGH) { TIEMPO = 83000; }
-  if (digitalRead(SW1) == HIGH && digitalRead(SW2) == LOW) { TIEMPO = 105000; }
-  if (digitalRead(SW1) == LOW && digitalRead(SW2) == HIGH) { TIEMPO = 135000; }
-  if (digitalRead(SW1) == LOW && digitalRead(SW2) == LOW) { TIEMPO = 165000; }
+  delay(1000);
+  tft.fillScreen(0x0000);
 }
 
 void loop() {
-  // put your main code here, to run repeatedly
-
-
-  B = digitalRead(COIN);
-  if (B == LOW && C != B) {
-    C = LOW;
+  // Leer moneda
+  static bool C = HIGH;
+  bool B = digitalRead(COIN);
+  if (B == LOW && C == HIGH) {
+    // Moneda insertada
     CONTADORCOIN++;
-    Serial.println(CONTADORCOIN);
+    C = LOW;
+    Serial.print("Monedas: "); Serial.println(CONTADORCOIN);
+    // Mostrar créditos
+    tft.fillRect(X_CREDITOS, Y_CREDITOS, 200, 20, 0x0000);
+    tft.setCursor(X_CREDITOS, Y_CREDITOS);
+    tft.setTextColor(0xFFFF);
+    tft.print("Creditos: "); tft.print(CONTADORCOIN);
     delay(200);
+  } else if (B == HIGH) {
+    C = HIGH;
   }
-  if (B == HIGH && B != C) { C = HIGH; }
-  if (CONTADORCOIN >= CREDIT) { CONT++; }
-  delayMicroseconds(150);
 
-  if (CONT == 100) { Audio.play("coin1"); }
-
-  if (CONT == 2800) { Audio.play("music"); }
-
-  if (CONT == 3000) {
-    ;
+  // Iniciar juego cuando alcanza crédito
+  if (CONTADORCOIN >= CREDIT && CONT == 0) {
+    CONT = millis();
+    Audio.play("coin1.wav");
+    delay(500);
+    Audio.play("music.wav");
     digitalWrite(SMOTOR, HIGH);
+    tft.fillRect(X_ESTADO, Y_ESTADO, 200, 20, 0x0000);
+    tft.setCursor(X_ESTADO, Y_ESTADO);
+    tft.setTextColor(0x07E0);
+    tft.println("Jugando...");
   }
 
-  if (digitalRead(BOTON == HIGH)) { digitalWrite(SBOTON, HIGH); }
-  if (digitalRead(BOTON == LOW)) { digitalWrite(SBOTON, LOW); }
+  // Actualizar tiempo restante
+  if (CONT > 0) {
+    unsigned long elapsed = millis() - CONT;
+    if (elapsed <= TIEMPO) {
+      int remaining = (TIEMPO - elapsed) / 1000;
+      tft.fillRect(X_TIEMPO, Y_TIEMPO, 200, 20, 0x0000);
+      tft.setCursor(X_TIEMPO, Y_TIEMPO);
+      tft.setTextColor(0xFFE0);
+      tft.print("Tiempo: "); tft.print(remaining); tft.println(" s");
+    }
+  }
 
-
-  if (CONT > TIEMPO) {
+  // Finalizar juego
+  if (CONT > 0 && millis() - CONT > TIEMPO) {
     digitalWrite(SMOTOR, LOW);
     Audio.stopPlayback();
-    CONTADORCOIN = (CONTADORCOIN - CREDIT);
     CONT = 0;
-    delay(3000);
+    CONTADORCOIN -= CREDIT;
+    tft.fillRect(X_ESTADO, Y_ESTADO, 200, 20, 0x0000);
+    tft.setCursor(X_ESTADO, Y_ESTADO);
+    tft.setTextColor(0xF800);
+    tft.println("Terminado");
+    delay(2000);
+    tft.fillRect(X_TIEMPO, Y_TIEMPO, 200, 20, 0x0000);
   }
 
-  if (LA == 1) { digitalWrite(LUZ1, HIGH); }
-  if (LA == 500) { digitalWrite(LUZ2, HIGH); }
-  if (LA == 1000) { digitalWrite(LUZ1, LOW); }
-  if (LA == 1500) { digitalWrite(LUZ2, LOW); }
-  if (LA == 1) { digitalWrite(LUZ3, HIGH); }
-  if (LA == 500) { digitalWrite(LUZ3, LOW); }
+  // Control botón físico SBOTON
+  if (digitalRead(BOTON) == HIGH) digitalWrite(SBOTON, HIGH);
+  else                           digitalWrite(SBOTON, LOW);
+
+  // Secuencia de luces
+  if (LA == 0)      digitalWrite(LUZ1, HIGH);
+  else if (LA == 500)  digitalWrite(LUZ2, HIGH);
+  else if (LA == 1000) digitalWrite(LUZ1, LOW);
+  else if (LA == 1500) digitalWrite(LUZ2, LOW);
+  else if (LA == 1)    digitalWrite(LUZ3, HIGH);
+  else if (LA == 500)  digitalWrite(LUZ3, LOW);
 
   LA++;
+  if (LA >= 2000) LA = 0;
 
-  if (CONT == 0) { delayMicroseconds(900); }
-
-  if (LA == 2000) {
-    LA = 0;
-    Serial.println(CONT);
-  }
+  delayMicroseconds(150);
 }
