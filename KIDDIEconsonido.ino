@@ -21,21 +21,22 @@ TMRpcm Audio;
 Adafruit_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 
 // Pines originales
-int COIN       = 8;    // Entrada coin
-int BOTON      = 4;    // Botón físico
-int SW1        = 5;    // DIP switch tiempo bit 1
-int SW2        = 6;    // DIP switch tiempo bit 2
-int SMOTOR     = 10;   // Salida motor
-int SBOTON     = 28;   // Salida activada por botón
+int COIN       = 53;   // Entrada coin (junto a GND)
+int BOTON      = 51;   // Botón físico
+int SW1        = 49;   // DIP switch tiempo bit 1
+int SW2        = 47;   // DIP switch tiempo bit 2
+int SMOTOR     = 41;   // Salida motor
+int SBOTON     = 39;   // Salida activada por botón
 
-int LUZ1       = 22;   // Salidas luces
-int LUZ2       = 24;
-int LUZ3       = 26;
+int LUZ1       = 31;   // Salidas luces
+int LUZ2       = 33;
+int LUZ3       = 35;
+
 
 // Variables de control
 unsigned int CONTADORCOIN = 0;
 unsigned long CONT        = 0;
-unsigned int TIEMPO       = 0;
+unsigned long TIEMPO      = 0;      // Cambiado a unsigned long para soportar tiempos > 65535
 const int CREDIT          = 1;
 int LA                   = 0;
 
@@ -90,10 +91,10 @@ void setup() {
   }
 
   // Configurar tiempo según DIP switches
-  if (digitalRead(SW1) == HIGH && digitalRead(SW2) == HIGH) TIEMPO =  83000;
-  if (digitalRead(SW1) == HIGH && digitalRead(SW2) == LOW)  TIEMPO = 105000;
-  if (digitalRead(SW1) == LOW  && digitalRead(SW2) == HIGH) TIEMPO = 135000;
-  if (digitalRead(SW1) == LOW  && digitalRead(SW2) == LOW)  TIEMPO = 165000;
+  if (digitalRead(SW1) == HIGH && digitalRead(SW2) == HIGH) TIEMPO =  83000UL;
+  if (digitalRead(SW1) == HIGH && digitalRead(SW2) == LOW)  TIEMPO = 105000UL;
+  if (digitalRead(SW1) == LOW  && digitalRead(SW2) == HIGH) TIEMPO = 135000UL;
+  if (digitalRead(SW1) == LOW  && digitalRead(SW2) == LOW)  TIEMPO = 165000UL;
 
   delay(1000);
   tft.fillScreen(0x0000);
@@ -162,7 +163,7 @@ void loop() {
   else                           digitalWrite(SBOTON, LOW);
 
   // Secuencia de luces
-  if (LA == 0)      digitalWrite(LUZ1, HIGH);
+  if (LA == 0)       digitalWrite(LUZ1, HIGH);
   else if (LA == 500)  digitalWrite(LUZ2, HIGH);
   else if (LA == 1000) digitalWrite(LUZ1, LOW);
   else if (LA == 1500) digitalWrite(LUZ2, LOW);
