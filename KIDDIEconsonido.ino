@@ -93,8 +93,8 @@ void setup() {
   Audio.setVolume(5);
 
   // TFT
-  uint16_t ID = tft.readID();
-  tft.begin(ID);
+  //uint16_t ID = tft.readID(); //ESTO SE USA CON PANTALLAS MCUFRIEND
+  tft.begin(0x7789); //0x7789 en el caso de las nuevas pantallas
   tft.setRotation(1);
   tft.fillScreen(BLACK);
   tft.setTextSize(2);
@@ -157,6 +157,7 @@ void loop() {
       songStart = now;
       playSong(cancionSeleccionada);
       digitalWrite(SMOTOR_PIN, HIGH);
+      
     }
   }
   else if (state == PLAY_THEME) {
