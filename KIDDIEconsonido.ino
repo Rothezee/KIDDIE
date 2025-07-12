@@ -47,7 +47,7 @@ unsigned long lastSecondPrint = 0;  // Para imprimir cada segundo
 
 // ================VARIABLES DE CONTROL DE COIN====================
 unsigned long lastCoinTime = 0;
-const unsigned long MIN_INTERVALO_COIN = 500;  // 1.5 segundos
+const unsigned long MIN_INTERVALO_COIN = 500;  // 0.5 segundos
 //==================================================================
 
 // Tiempos de juego según DIP switches
@@ -171,7 +171,7 @@ void loop() {
       state = PLAY_THEME;
       songStart = now;
       playSong(cancionSeleccionada);
-      digitalWrite(SMOTOR_PIN, HIGH);
+      digitalWrite(SMOTOR_PIN, LOW); //ENCIENDE EL MOTOR
     }
   }
   else if (state == PLAY_THEME) {
@@ -233,7 +233,7 @@ void iniciarJuego(unsigned long now) {
 void terminarJuego(unsigned long now) {
   Audio.stopPlayback();
   state = IDLE;
-  digitalWrite(SMOTOR_PIN, LOW);
+  digitalWrite(SMOTOR_PIN, HIGH); //APAGA EL MOTOR
   
   // Consumir un crédito de juego
   CREDITOS_JUEGO--;
