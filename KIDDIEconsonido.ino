@@ -1,10 +1,12 @@
 /*
-Version 2.0 de KIDDIE Junio del 2025
+Version 2.0 de KIDDIE Junio del 2025 - CORREGIDO
 
 - "calesita" de canciones
 - Control de Pantalla TFT MCUFRIEND
 - Control de memoria SD que trae el display
 - Sistema embebido con EEPROM
+- CORREGIDO: Separación de créditos totales y créditos de juego
+- CORREGIDO: Juegos automáticos consecutivos
 */
 
 #include <SD.h>
@@ -41,6 +43,9 @@ const unsigned long DUR_THEMES[3] = {147000UL,       // 2:27
                                      176000UL,       // 2:56
                                       82000UL};      // 1:22
 
+unsigned long lastSecondPrint = 0;  // Para imprimir cada segundo
+
+
 // Tiempos de juego según DIP switches
 unsigned long TIEMPO_JUEGO = 83000UL;  // Variable, se configura en setup()
 
@@ -52,11 +57,12 @@ MCUFRIEND_kbv tft;
 enum State { IDLE, PLAY_SALUDO, PLAY_THEME };
 State state = IDLE;
 
-// Variables de control
-unsigned int CONTADORCOIN = 0;
+// Variables de control - CORREGIDO
+unsigned int CREDITOS_TOTALES = 0;    // Créditos totales acumulados (se guarda en EEPROM)
+unsigned int CREDITOS_JUEGO = 0;      // Créditos disponibles para jugar (volátil)
 unsigned long gameStart = 0;   
-unsigned long songStart = 0;   // Inicio de la canción actual
-int cancionSeleccionada = 1;   //
+unsigned long songStart = 0;          // Inicio de la canción actual
+int cancionSeleccionada = 1;
 int LA = 0;
 
 void setup() {
@@ -102,11 +108,8 @@ void setup() {
   tft.setCursor(10,10);
   tft.print("Calesita v2025");
 
-  // Mostrar tiempo configurado
-  mostrarTiempo();
-
-  // Cargar creditos desde EEPROM
-  EEPROM.get(0, CONTADORCOIN);
+  // Cargar creditos desde EEPROM - CORREGIDO
+  EEPROM.get(0, CREDITOS_TOTALES);
   mostrarContador();
 
   // Iniciar SD
@@ -121,18 +124,19 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // Detección de moneda
+  // Detección de moneda - CORREGIDO
   static bool lastCoin = HIGH;
   bool coinState = digitalRead(COIN_PIN);
   if (coinState == LOW && lastCoin == HIGH) {
-    CONTADORCOIN++;
-    EEPROM.put(0, CONTADORCOIN);
+    CREDITOS_TOTALES++;
+    CREDITOS_JUEGO++;
+    EEPROM.put(0, CREDITOS_TOTALES);  // Guarda solo los créditos totales
+    Serial.println("*** MONEDA INSERTADA ***");
     mostrarContador();
-    if (state == IDLE && CONTADORCOIN > 0) {
-      state = PLAY_SALUDO;
-      gameStart = now;        // Marca inicio de juego
-      songStart = now;        // Marca inicio de saludo
-      Audio.play("saludo.wav");
+    
+    // Si está en IDLE y hay créditos, inicia juego
+    if (state == IDLE && CREDITOS_JUEGO > 0) {
+      iniciarJuego(now);
     }
   }
   lastCoin = coinState;
@@ -143,6 +147,8 @@ void loop() {
   if (selState == LOW && lastSel == HIGH) {
     cancionSeleccionada++;
     if (cancionSeleccionada > 3) cancionSeleccionada = 1;
+    Serial.print("Cancion cambiada a: ");
+    Serial.println(cancionSeleccionada);
     if (state == PLAY_THEME) {
       playSong(cancionSeleccionada);
       songStart = now;  // reinicia conteo solo para duración de esta canción
@@ -157,66 +163,111 @@ void loop() {
       songStart = now;
       playSong(cancionSeleccionada);
       digitalWrite(SMOTOR_PIN, HIGH);
-      
     }
   }
   else if (state == PLAY_THEME) {
     // Duración de la canción actual
     if (now - songStart >= DUR_THEMES[cancionSeleccionada - 1]) {
-      Audio.stopPlayback();
-      state = IDLE;
-      digitalWrite(SMOTOR_PIN, LOW);
-      CONTADORCOIN--;
-      EEPROM.put(0, CONTADORCOIN);
-      mostrarContador();
+      terminarJuego(now);
     }
     // Fin de tiempo de juego (TIEMPO VARIABLE según DIP switches)
     if (now - gameStart >= TIEMPO_JUEGO) {
-      Audio.stopPlayback();
-      state = IDLE;
-      digitalWrite(SMOTOR_PIN, LOW);
-      CONTADORCOIN--;
-      EEPROM.put(0, CONTADORCOIN);
-      mostrarContador();
+      terminarJuego(now);
     }
   }
 
   // SBOTON refleja BUTTON_IN
   digitalWrite(SBOTON_PIN, digitalRead(BUTTON_IN));
 
-    // Secuencia de luces con intervalos de ~1 segundo usando millis()
-static unsigned long prevBlink = 0;
-static int blinkPhase = 0;  // 0:Luz1 on, 1:Luz2 on, 2:Luz1 off, 3:Luz2 off
-unsigned long interval = 1000;  // Duración de cada fase en ms (~1 segundo)
+  // Secuencia de luces con intervalos de ~1 segundo usando millis()
+  static unsigned long prevBlink = 0;
+  static int blinkPhase = 0;  // 0:Luz1 on, 1:Luz2 on, 2:Luz1 off, 3:Luz2 off
+  unsigned long interval = 1000;  // Duración de cada fase en ms (~1 segundo)
 
-if (millis() - prevBlink >= interval) {
-  prevBlink = millis();
-  blinkPhase = (blinkPhase + 1) % 4;
-  // Fases para LUZ1 y LUZ2
-  digitalWrite(LUZ1_PIN, (blinkPhase == 0 || blinkPhase == 1));
-  digitalWrite(LUZ2_PIN, (blinkPhase == 1 || blinkPhase == 2));
-  // LUZ3 parpadea al mismo ritmo que LUZ1 pero en fases 0 y 2
-  digitalWrite(LUZ3_PIN, (blinkPhase == 0 || blinkPhase == 2));
-}
+  if (millis() - prevBlink >= interval) {
+    prevBlink = millis();
+    blinkPhase = (blinkPhase + 1) % 4;
+    // Fases para LUZ1 y LUZ2
+    digitalWrite(LUZ1_PIN, (blinkPhase == 0 || blinkPhase == 1));
+    digitalWrite(LUZ2_PIN, (blinkPhase == 1 || blinkPhase == 2));
+    // LUZ3 parpadea al mismo ritmo que LUZ1 pero en fases 0 y 2
+    digitalWrite(LUZ3_PIN, (blinkPhase == 0 || blinkPhase == 2));
+  }
+
+    // Mostrar tiempo de juego transcurrido por Serial
+  if (state == PLAY_SALUDO || state == PLAY_THEME) {
+    if (now - lastSecondPrint >= 1000) {
+      
+      unsigned long elapsed = (now - gameStart) / 1000;
+      Serial.print("Tiempo de juego: ");
+      Serial.print(elapsed);
+      Serial.println("s");
+      lastSecondPrint = now;
+      mostrarTiempo(elapsed);
+    }
+  }
+
 }
 
-// Funciones auxiliares
+// Funciones auxiliares - CORREGIDAS
+
+void iniciarJuego(unsigned long now) {
+  state = PLAY_SALUDO;
+  gameStart = now;
+  songStart = now;
+  Audio.play("saludo.wav");
+  Serial.println("=== JUEGO INICIADO ===");
+  Serial.print("Cancion seleccionada: ");
+  Serial.println(cancionSeleccionada);
+}
+
+void terminarJuego(unsigned long now) {
+  Audio.stopPlayback();
+  state = IDLE;
+  digitalWrite(SMOTOR_PIN, LOW);
+  
+  // Consumir un crédito de juego
+  CREDITOS_JUEGO--;
+  Serial.println("=== JUEGO TERMINADO ===");
+  mostrarContador();
+  
+  // CORREGIDO: Verificar si hay más créditos para jugar automáticamente
+  if (CREDITOS_JUEGO > 0) {
+    Serial.println(">>> Iniciando siguiente juego automaticamente <<<");
+    delay(1000);  // Pequeña pausa entre juegos
+    iniciarJuego(now);
+  } else {
+    Serial.println(">>> No hay mas creditos - Esperando monedas <<<");
+  }
+}
+
 void mostrarContador() {
-  tft.fillRect(0, 100, 240, 40, BLACK);
+  tft.fillRect(0, 100, 240, 60, BLACK);
   tft.setCursor(10, 110);
-  tft.setTextSize(3);
+  tft.setTextSize(2);
   tft.setTextColor(WHITE);
-  tft.print("Coin: ");
-  tft.print(CONTADORCOIN);
+  tft.print("Total: ");
+  tft.print(CREDITOS_TOTALES);
+  
+  tft.setCursor(10, 130);
+  tft.setTextColor(GREEN);
+  tft.print("Juego: ");
+  tft.print(CREDITOS_JUEGO);
+  
+  // Imprimir también por Serial Monitor
+  Serial.print("Creditos - Total: ");
+  Serial.print(CREDITOS_TOTALES);
+  Serial.print(" | Juego: ");
+  Serial.println(CREDITOS_JUEGO);
 }
 
-void mostrarTiempo() {
+void mostrarTiempo(unsigned long elapsed) {
   tft.fillRect(0, 70, 240, 30, BLACK);
   tft.setCursor(10, 75);
   tft.setTextSize(2);
   tft.setTextColor(BLUE);
   tft.print("Tiempo: ");
-  tft.print(TIEMPO_JUEGO / 1000);
+  tft.print(elapsed);
   tft.print("s");
 }
 
