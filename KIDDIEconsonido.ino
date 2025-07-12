@@ -19,16 +19,16 @@ Version 2.0 de KIDDIE Junio del 2025 - CORREGIDO
 // Pines
 #define pinSD        53    // CS tarjeta SD
 #define AUDIO_PIN    46    // Salida audio PWM
-#define COIN_PIN     36    // Entrada moneda
-#define SEL_PIN      32    // Botón selector de canción
-#define BUTTON_IN    30    // Entrada botón SBOTON
-#define SBOTON_PIN   28    // Salida SBOTON
-#define SMOTOR_PIN   38    // Salida motor
+#define COIN_PIN     37    // Entrada moneda
+#define SEL_PIN      33    // Botón selector de canción
+#define BUTTON_IN    31    // Entrada botón SBOTON
+#define SBOTON_PIN   29    // Salida SBOTON
+#define SMOTOR_PIN   39    // Salida motor
 #define SW1_PIN      34    // DIP switch 
 #define SW2_PIN      35    // DIP switch 
-#define LUZ1_PIN     22    
-#define LUZ2_PIN     24    
-#define LUZ3_PIN     26    
+#define LUZ1_PIN     23    
+#define LUZ2_PIN     25    
+#define LUZ3_PIN     27    
 
 // Colores TFT
 #define BLACK   0x0000
@@ -45,6 +45,10 @@ const unsigned long DUR_THEMES[3] = {147000UL,       // 2:27
 
 unsigned long lastSecondPrint = 0;  // Para imprimir cada segundo
 
+// ================VARIABLES DE CONTROL DE COIN====================
+unsigned long lastCoinTime = 0;
+const unsigned long MIN_INTERVALO_COIN = 500;  // 1.5 segundos
+//==================================================================
 
 // Tiempos de juego según DIP switches
 unsigned long TIEMPO_JUEGO = 83000UL;  // Variable, se configura en setup()
@@ -99,8 +103,8 @@ void setup() {
   Audio.setVolume(5);
 
   // TFT
-  //uint16_t ID = tft.readID(); //ESTO SE USA CON PANTALLAS MCUFRIEND
-  tft.begin(0x7789); //0x7789 en el caso de las nuevas pantallas
+  uint16_t ID = tft.readID(); //ESTO SE USA CON PANTALLAS MCUFRIEND
+  tft.begin(ID); //0x7789 en el caso de las nuevas pantallas
   tft.setRotation(1);
   tft.fillScreen(BLACK);
   tft.setTextSize(2);
@@ -128,15 +132,20 @@ void loop() {
   static bool lastCoin = HIGH;
   bool coinState = digitalRead(COIN_PIN);
   if (coinState == LOW && lastCoin == HIGH) {
-    CREDITOS_TOTALES++;
-    CREDITOS_JUEGO++;
-    EEPROM.put(0, CREDITOS_TOTALES);  // Guarda solo los créditos totales
-    Serial.println("*** MONEDA INSERTADA ***");
-    mostrarContador();
-    
-    // Si está en IDLE y hay créditos, inicia juego
-    if (state == IDLE && CREDITOS_JUEGO > 0) {
-      iniciarJuego(now);
+    if (now - lastCoinTime >= MIN_INTERVALO_COIN) {
+      lastCoinTime = now;
+      CREDITOS_TOTALES++;
+      CREDITOS_JUEGO++;
+      EEPROM.put(0, CREDITOS_TOTALES);  // Guarda solo los créditos totales
+      Serial.println("*** MONEDA INSERTADA ***");
+      mostrarContador();
+      
+      // Si está en IDLE y hay créditos, inicia juego
+      if (state == IDLE && CREDITOS_JUEGO > 0) {
+        iniciarJuego(now);
+      }
+    } else {
+      Serial.println(">>> Moneda ignorada: intervalo muy corto <<<");
     }
   }
   lastCoin = coinState;
