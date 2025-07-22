@@ -144,6 +144,27 @@ void loop() {
       if (state == IDLE && CREDITOS_JUEGO > 0) {
         iniciarJuego(now);
       }
+
+// Asegurar que esta modificación esté en tu función terminarJuego():
+void terminarJuego(unsigned long now) {
+  state = IDLE;
+  CREDITOS_JUEGO = 0;
+  cancionSeleccionada = 1;
+  
+  // Apagar motor y LED3 al mismo tiempo
+  digitalWrite(SMOTOR_PIN, HIGH);  // APAGA EL MOTOR
+  digitalWrite(LUZ3_PIN, LOW);     // APAGA LED3
+  
+  // Apagar otras luces también
+  digitalWrite(LUZ1_PIN, LOW);
+  digitalWrite(LUZ2_PIN, LOW);
+  
+  // Detener música
+  mp3_stop();
+  
+  Serial.println("*** JUEGO TERMINADO ***");
+  mostrarContador();
+}
     } else {
       Serial.println(">>> Moneda ignorada: intervalo muy corto <<<");
     }
@@ -165,6 +186,11 @@ void loop() {
   }
   lastSel = selState;
 
+  // Variables para control del LED3
+  static unsigned long led3LastToggle = 0;
+  static bool led3State = false;
+  const unsigned long LED3_INTERVAL = 30000; // 30 segundos = 0.5 minutos
+
   // Lógica de estado
   if (state == PLAY_SALUDO) {
     if (now - songStart >= DUR_SALUDO) {
@@ -172,9 +198,23 @@ void loop() {
       songStart = now;
       playSong(cancionSeleccionada);
       digitalWrite(SMOTOR_PIN, LOW); //ENCIENDE EL MOTOR
+      
+      // Inicializar LED3 cuando se enciende el motor
+      led3LastToggle = now;
+      led3State = true;
+      digitalWrite(LUZ3_PIN, HIGH);
     }
   }
   else if (state == PLAY_THEME) {
+    // Control del LED3 - solo cuando el motor está activo
+    if (now - led3LastToggle >= LED3_INTERVAL) {
+      led3State = !led3State;
+      digitalWrite(LUZ3_PIN, led3State ? HIGH : LOW);
+      led3LastToggle = now;
+      Serial.print("LED3 ");
+      Serial.println(led3State ? "ENCENDIDO" : "APAGADO");
+    }
+    
     // Duración de la canción actual
     if (now - songStart >= DUR_THEMES[cancionSeleccionada - 1]) {
       terminarJuego(now);
@@ -188,7 +228,7 @@ void loop() {
   // SBOTON refleja BUTTON_IN
   digitalWrite(SBOTON_PIN, digitalRead(BUTTON_IN));
 
-  // Secuencia de luces con intervalos de ~1 segundo usando millis()
+  // Secuencia de luces LUZ1 y LUZ2 con intervalos de ~1 segundo usando millis()
   static unsigned long prevBlink = 0;
   static int blinkPhase = 0;  // 0:Luz1 on, 1:Luz2 on, 2:Luz1 off, 3:Luz2 off
   unsigned long interval = 1000;  // Duración de cada fase en ms (~1 segundo)
@@ -196,17 +236,15 @@ void loop() {
   if (millis() - prevBlink >= interval) {
     prevBlink = millis();
     blinkPhase = (blinkPhase + 1) % 4;
-    // Fases para LUZ1 y LUZ2
+    // Fases para LUZ1 y LUZ2 solamente
     digitalWrite(LUZ1_PIN, (blinkPhase == 0 || blinkPhase == 1));
     digitalWrite(LUZ2_PIN, (blinkPhase == 1 || blinkPhase == 2));
-    // LUZ3 parpadea al mismo ritmo que LUZ1 pero en fases 0 y 2
-    digitalWrite(LUZ3_PIN, (blinkPhase == 0 || blinkPhase == 2));
+    // LED3 ya no se controla aquí - se maneja arriba con su propio timing
   }
 
-    // Mostrar tiempo de juego transcurrido por Serial
+  // Mostrar tiempo de juego transcurrido por Serial
   if (state == PLAY_SALUDO || state == PLAY_THEME) {
     if (now - lastSecondPrint >= 1000) {
-      
       unsigned long elapsed = (now - gameStart) / 1000;
       Serial.print("Tiempo de juego: ");
       Serial.print(elapsed);
@@ -215,9 +253,7 @@ void loop() {
       mostrarTiempo(elapsed);
     }
   }
-
 }
-
 // Funciones auxiliares - CORREGIDAS
 
 void iniciarJuego(unsigned long now) {
